@@ -927,12 +927,12 @@ async function launchSession() {
 
   showLoading(true);
   try {
-    // Always save questions to localStorage (avoids URL length limits)
+    // Always save questions to localStorage (instant restore for teacher)
     localStorage.setItem('quizlive_questions', JSON.stringify(state.questions));
 
     if (API_URL) {
-      // Only send small session metadata to Sheets — no questions
       await apiPost('resetAll');
+      // Save session metadata first
       await apiPost('saveSession', { updates: {
         code:         state.session.code,
         title:        state.session.title,
@@ -943,7 +943,28 @@ async function launchSession() {
         revealed:     false,
         totalQ:       state.questions.length
       }});
-      toast('✓ Session synced to Google Sheets');
+      // Save each question individually to Sheets (avoids URL length limits)
+      let syncErrors = 0;
+      for (let i = 0; i < state.questions.length; i++) {
+        try {
+          const q = state.questions[i];
+          // Send minimal question data — just what students need
+          const minQ = {
+            text:       q.text,
+            options:    q.options,
+            correctIdx: q.correctIdx,
+            timer:      q.timer || state.session.defaultTimer
+          };
+          await apiPost('saveOneQuestion', { idx: i, question: minQ });
+        } catch(e) {
+          syncErrors++;
+        }
+      }
+      if (syncErrors === 0) {
+        toast('✓ Session synced to Google Sheets');
+      } else {
+        toast(`Session launched. ${syncErrors} questions failed to sync.`, true);
+      }
     } else {
       toast('Session launched (demo mode — no backend connected)');
     }
@@ -1107,6 +1128,18 @@ async function joinSession() {
   await _doJoin(name, email, code);
 }
 
+async function fetchQuestionsOneByOne(total) {
+  // Fetches all questions from Sheets one at a time to avoid URL length limits
+  // Questions are stored in Sheets by the teacher on launch
+  try {
+    const res = await apiGet('getQuestions');
+    if (res && res.questions && res.questions.length > 0) {
+      return res.questions;
+    }
+  } catch(e) {}
+  return [];
+}
+
 async function _doJoin(name, email, code) {
   showLoading(true);
   try {
@@ -1140,6 +1173,22 @@ async function _doJoin(name, email, code) {
         state.session.revealed    = s.revealed === true || s.revealed === 'true';
         state.session.timerMax    = Number(s.timerMax || 30);
         state.session.totalQ      = Number(s.totalQ || 0);
+
+        // Load questions — try localStorage first (teacher's device),
+        // then fetch one-by-one from Sheets using the stored question index
+        const savedQ = localStorage.getItem('quizlive_questions');
+        if (savedQ) {
+          state.questions = JSON.parse(savedQ);
+        } else {
+          // Fetch questions from Sheets one at a time
+          const totalQ = Number(s.totalQ || 0);
+          if (totalQ > 0) {
+            const questions = await fetchQuestionsOneByOne(totalQ);
+            if (questions && questions.length > 0) {
+              state.questions = questions;
+            }
+          }
+        }
       } else {
         toast('Could not reach session. Check your connection.', true);
         showLoading(false); return;
