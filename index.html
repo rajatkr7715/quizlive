@@ -684,7 +684,12 @@ function changeTeacherPassword() {
 // If no API URL is set, falls back to local state (demo mode).
 // ═══════════════════════════════════════════════════════════════════
 
-let API_URL = localStorage.getItem('quizlive_api_url') || '';
+// ── PASTE YOUR APPS SCRIPT URL BETWEEN THE QUOTES BELOW ──────────
+// This makes it work for students automatically without them needing to paste it.
+const HARDCODED_API_URL = 'https://script.google.com/macros/s/AKfycby7u6_i1wD2b_uIOe_tW9yGwkRZgmJhNobll1toXCrrRDTIqKaM3GxW-B0QNr-yxQ6R/exec';
+// ─────────────────────────────────────────────────────────────────
+
+let API_URL = HARDCODED_API_URL || localStorage.getItem('quizlive_api_url') || '';
 
 function saveApiUrl() {
   API_URL = document.getElementById('api-url-input').value.trim();
@@ -1106,24 +1111,38 @@ async function _doJoin(name, email, code) {
   showLoading(true);
   try {
     if (API_URL) {
-      // Validate session and register via backend
-      const res = await apiPost('joinStudent', { name, email, code });
-      // Fetch questions from backend
-      const qData = await apiGet('getQuestions');
-      if (qData && qData.questions && qData.questions.length) {
-        state.questions = qData.questions;
-      }
-      // Fetch session config
+      // Fetch session first to validate code and active status
       const sessData = await apiGet('getSession');
       if (sessData && sessData.session) {
         const s = sessData.session;
+        const isActive = s.active === true || s.active === 'true';
+        const sessionCode = (s.code || '').toUpperCase().trim();
+        const enteredCode = code.toUpperCase().trim();
+
+        if (!isActive) {
+          toast('No active session. Ask your teacher to launch.', true);
+          showLoading(false); return;
+        }
+        if (sessionCode !== enteredCode) {
+          toast('Session code not found. Ask your teacher.', true);
+          showLoading(false); return;
+        }
+
+        // All good — register student
+        await apiPost('joinStudent', { name, email, code });
+
+        // Load session config into local state
         state.session.code        = s.code || code;
         state.session.title       = s.title || 'Quiz';
         state.session.showCorrect = s.showCorrect !== 'false' && s.showCorrect !== false;
-        state.session.active      = s.active === true || s.active === 'true';
+        state.session.active      = true;
         state.session.currentQIdx = Number(s.currentQIdx ?? -1);
         state.session.revealed    = s.revealed === true || s.revealed === 'true';
         state.session.timerMax    = Number(s.timerMax || 30);
+        state.session.totalQ      = Number(s.totalQ || 0);
+      } else {
+        toast('Could not reach session. Check your connection.', true);
+        showLoading(false); return;
       }
     } else {
       // Demo mode: validate locally
@@ -1568,10 +1587,10 @@ function showLoading(show) {
 // ═══════════════════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════════════════
-// Restore saved API URL
+// Restore API URL — hardcoded URL takes priority
 if (API_URL) {
   document.getElementById('api-url-input').value = API_URL;
-  document.getElementById('api-status-dot').className = 'status-dot'; // unknown until tested
+  document.getElementById('api-status-dot').className = 'status-dot connected';
 }
 
 // Demo data (used when no API set)
