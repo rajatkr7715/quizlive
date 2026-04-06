@@ -108,16 +108,15 @@
   .student-table th{text-align:left;padding:.5rem .75rem;color:var(--muted);font-weight:500;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);}
   .student-table td{padding:.6rem .75rem;border-bottom:1px solid rgba(255,255,255,.04);}
 
-  /* PIE CHART */
-  .pie-container{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:1.25rem;margin-top:1rem;animation:fadeUp .4s ease;}
-  .pie-title{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;font-weight:600;}
-  .pie-wrap{display:flex;align-items:center;gap:2rem;flex-wrap:wrap;}
-  .pie-legend{display:flex;flex-direction:column;gap:.6rem;flex:1;}
-  .pie-legend-item{display:flex;align-items:center;gap:.6rem;font-size:.85rem;}
-  .pie-swatch{width:14px;height:14px;border-radius:3px;flex-shrink:0;}
-  .pie-legend-label{color:rgba(255,255,255,.8);flex:1;}
-  .pie-legend-pct{font-weight:600;color:var(--white);}
-  .pie-count-note{font-size:.78rem;color:var(--muted);margin-top:.75rem;}
+  /* RESULTS SUMMARY */
+  .results-box{background:rgba(255,255,255,.03);border:1px solid var(--border);border-radius:12px;padding:1.25rem;margin-top:1rem;animation:fadeUp .4s ease;}
+  .results-title{font-size:.8rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.75rem;font-weight:600;}
+  .results-row{display:flex;align-items:center;gap:.75rem;margin-bottom:.6rem;}
+  .results-letter{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;background:rgba(255,255,255,.1);flex-shrink:0;color:var(--white);}
+  .results-bar-wrap{flex:1;background:rgba(255,255,255,.07);border-radius:999px;height:22px;overflow:hidden;}
+  .results-bar-fill{height:100%;background:var(--teal);border-radius:999px;transition:width .6s ease;display:flex;align-items:center;padding-left:.5rem;font-size:.72rem;font-weight:600;color:var(--navy);white-space:nowrap;min-width:0;}
+  .results-pct{width:80px;text-align:right;font-size:.82rem;color:var(--muted);flex-shrink:0;}
+  .results-note{font-size:.78rem;color:var(--muted);margin-top:.75rem;}
   @keyframes fadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
 
   #screen-student{background:radial-gradient(ellipse at 70% 10%,rgba(0,201,167,.1) 0%,transparent 50%),var(--navy);}
@@ -179,7 +178,7 @@
   #toast.visible{transform:translateX(-50%) translateY(0);}
   #toast.error{border-color:var(--red);}
   ::-webkit-scrollbar{width:6px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:rgba(255,255,255,.1);border-radius:3px;}
-  @media(max-width:600px){.options-grid{grid-template-columns:1fr;}.pie-wrap{flex-direction:column;}}
+  @media(max-width:600px){.options-grid{grid-template-columns:1fr;}}
 </style>
 </head>
 <body>
@@ -333,7 +332,7 @@
           <div class="timer-big" id="ctrl-timer">—</div>
           <div class="progress-bar-wrap"><div class="progress-bar-fill" id="ctrl-timer-bar" style="width:100%"></div></div>
         </div>
-        <div id="ctrl-pie-container" style="display:none;"></div>
+        <div id="ctrl-results-container" style="display:none;"></div>
       </div>
       <div style="display:flex;gap:.75rem;flex-wrap:wrap;">
         <button class="btn btn-primary btn-large" id="btn-next-q" onclick="pushNextQuestion()">▶ Launch Next Question</button>
@@ -387,7 +386,7 @@
       <button class="btn btn-primary btn-large" onclick="submitStudentAnswer()">Submit Answer</button>
     </div>
     <div class="submitted-msg" id="s-submitted-msg">✓ Answer submitted! Waiting for results...</div>
-    <div id="s-pie-container" style="display:none;"></div>
+    <div id="s-results-container" style="display:none;"></div>
   </div>
   <div class="waiting-screen" id="s-summary" style="display:none;">
     <div class="big-icon">🎉</div>
@@ -431,7 +430,7 @@
 // ── CONFIG ───────────────────────────────────────────────────────────
 const HARDCODED_API_URL = 'https://script.google.com/macros/s/AKfycby7u6_i1wD2b_uIOe_tW9yGwkRZgmJhNobll1toXCrrRDTIqKaM3GxW-B0QNr-yxQ6R/exec';
 let API_URL = HARDCODED_API_URL || localStorage.getItem('quizlive_api_url') || '';
-const PIE_COLORS = ['#00c9a7','#f5a623','#7c6fdf','#e84545','#3498db'];
+
 const LETTERS = ['A','B','C','D','E'];
 
 // ── STATE ────────────────────────────────────────────────────────────
@@ -608,7 +607,7 @@ async function pushNextQuestion(){
   const q=state.questions[nextIdx];
   const timerMax=q.timer||state.session.defaultTimer;
   state.session.timerMax=timerMax; state.session.currentTimer=timerMax;
-  document.getElementById('ctrl-pie-container').style.display='none';
+  document.getElementById('ctrl-results-container').style.display='none';
   if(API_URL){ try{await apiPost('pushQuestion',{qIdx:nextIdx,timer:timerMax});}catch(e){} }
   updateLiveControlUI(); startTimer();
   document.getElementById('btn-end-timer').disabled=false;
@@ -627,21 +626,21 @@ async function endCurrentTimer(){
   state.session.revealed=true;
   document.getElementById('btn-end-timer').disabled=true;
   updateTimerUI(0,state.session.timerMax);
-  // Fetch latest response counts from Sheets before rendering pie
   if(API_URL){
     try{
       await apiPost('revealQuestion');
-      const data=await apiGet('pollState');
-      if(data&&data.responseCounts&&data.responseCounts.length){
-        const idx=state.session.currentQIdx;
-        if(!state.responses[idx])state.responses[idx]={};
-        const fakeResps={};
-        data.responseCounts.forEach((c,i)=>{for(let n=0;n<c;n++)fakeResps[`sv_${i}_${n}`]=i;});
-        state.responses[idx]={...fakeResps};
+      const data = await apiGet('pollState');
+      if(data && data.responseCounts){
+        renderResults('ctrl-results-container', state.session.currentQIdx,
+          data.responseCounts, data.studentCount || 0);
       }
-    }catch(e){}
+    }catch(e){
+      // Fallback: show whatever local responses we have
+      showLocalResults('ctrl-results-container');
+    }
+  } else {
+    showLocalResults('ctrl-results-container');
   }
-  renderPie('ctrl-pie-container',state.session.currentQIdx,160);
 }
 
 function updateTimerUI(t,max){
@@ -671,34 +670,45 @@ function updateResponseStats(){
 function updateStudentStats(){ const count=Object.keys(state.students).length; document.getElementById('live-student-count').textContent=`${count} student${count!==1?'s':''}`; document.getElementById('stat-joined').textContent=count; }
 
 // ── PIE CHART ────────────────────────────────────────────────────────
-function renderPie(containerId, qIdx, size){
-  const q=state.questions[qIdx]; if(!q)return;
-  const resps=state.responses[qIdx]||{};
-  const total=Object.keys(resps).length;
-  const counts=new Array(q.options.length).fill(0);
-  Object.values(resps).forEach(r=>{if(r!==null&&r!==undefined&&counts[r]!==undefined)counts[r]++;});
+// ── RESULTS SUMMARY ─────────────────────────────────────────────────
+// Fallback: build counts from local state.responses
+function showLocalResults(containerId){
+  const idx = state.session.currentQIdx;
+  const q = state.questions[idx];
+  if(!q) return;
+  const resps = state.responses[idx] || {};
+  const counts = new Array(q.options.length).fill(0);
+  Object.values(resps).forEach(r => { if(r !== null && r !== undefined && counts[r] !== undefined) counts[r]++; });
+  renderResults(containerId, idx, counts, Object.keys(state.students).length);
+}
 
-  const cx=size/2,cy=size/2,r=size/2-10;
-  let paths=''; let startAngle=-Math.PI/2;
-  counts.forEach((c,i)=>{
-    if(c===0)return;
-    const frac=c/Math.max(1,total); const angle=frac*2*Math.PI; const endAngle=startAngle+angle;
-    const x1=cx+r*Math.cos(startAngle),y1=cy+r*Math.sin(startAngle);
-    const x2=cx+r*Math.cos(endAngle),y2=cy+r*Math.sin(endAngle);
-    const large=angle>Math.PI?1:0;
-    paths+=`<path d="M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${large},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z" fill="${PIE_COLORS[i%PIE_COLORS.length]}" opacity="0.9"/>`;
-    startAngle=endAngle;
-  });
-  if(total===0) paths=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="rgba(255,255,255,0.05)" stroke="rgba(255,255,255,0.1)" stroke-width="1"/>`;
 
-  const legend=q.options.map((opt,i)=>{
-    const c=counts[i]; const pct=total>0?Math.round((c/total)*100):0;
-    return `<div class="pie-legend-item"><div class="pie-swatch" style="background:${PIE_COLORS[i%PIE_COLORS.length]}"></div><span class="pie-legend-label">${LETTERS[i]}. ${esc(opt.text.substring(0,35))}${opt.text.length>35?'…':''}</span><span class="pie-legend-pct">${pct}%&nbsp;(${c})</span></div>`;
+// Renders a simple bar + text summary from a counts array
+// counts = [numForA, numForB, ...]  total = sum of counts
+// totalStudents = number of students joined (for denominator label)
+function renderResults(containerId, qIdx, counts, totalStudents){
+  const q = state.questions[qIdx];
+  if(!q) return;
+  const total = counts.reduce((a,b)=>a+b, 0);
+  const rows = q.options.map((opt, i) => {
+    const c = counts[i] || 0;
+    const pct = total > 0 ? Math.round((c / total) * 100) : 0;
+    const barPct = pct; // width of bar
+    return `<div class="results-row">
+      <div class="results-letter">${LETTERS[i]}</div>
+      <div class="results-bar-wrap">
+        <div class="results-bar-fill" style="width:${barPct}%">${c > 0 ? c + ' student' + (c!==1?'s':'') : ''}</div>
+      </div>
+      <div class="results-pct">${pct}%</div>
+    </div>`;
   }).join('');
-
-  const container=document.getElementById(containerId);
-  container.innerHTML=`<div class="pie-container"><div class="pie-title">Response Distribution</div><div class="pie-wrap"><svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" style="flex-shrink:0;">${paths}</svg><div class="pie-legend">${legend}</div></div><div class="pie-count-note">${total} of ${Object.keys(state.students).length||'?'} students responded</div></div>`;
-  container.style.display='block';
+  const container = document.getElementById(containerId);
+  container.innerHTML = `<div class="results-box">
+    <div class="results-title">Response Distribution</div>
+    ${rows}
+    <div class="results-note">${total} of ${totalStudents} students responded</div>
+  </div>`;
+  container.style.display = 'block';
 }
 
 // ── STUDENT JOIN ─────────────────────────────────────────────────────
@@ -755,6 +765,8 @@ async function _doJoin(name,email,code){
   state.questions.forEach((_,i)=>{if(!state.responses[i])state.responses[i]={};});
   document.getElementById('s-name-tag').textContent=name;
   updateStudentScorePill();
+  // Set lastSeenQIdx to current question so poll doesn't immediately re-render
+  lastSeenQIdx=state.session.currentQIdx;
   showLoading(false);
   showScreen('screen-student');
   syncStudentQuestion();
@@ -771,7 +783,7 @@ function syncStudentQuestion(){
   document.getElementById('s-waiting').style.display='none';
   document.getElementById('s-q-wrap').style.display='flex';
   document.getElementById('s-summary').style.display='none';
-  document.getElementById('s-pie-container').style.display='none';
+  document.getElementById('s-results-container').style.display='none';
   document.getElementById('s-submitted-msg').classList.remove('visible');
   document.getElementById('s-q-num').textContent=`Question ${idx+1}`;
   document.getElementById('s-q-counter').textContent=`Q ${idx+1} / ${state.questions.length}`;
@@ -783,7 +795,7 @@ function syncStudentQuestion(){
   document.getElementById('s-options').innerHTML=q.options.map((opt,i)=>`<div class="s-opt ${state.studentAnswered?'disabled':''} ${state.studentAnswered&&i===prevAnswer?'selected':''}" onclick="selectStudentOption(${i})" id="s-opt-${i}"><div class="s-opt-letter">${LETTERS[i]}</div><span>${esc(opt.text)}</span></div>`).join('');
   document.getElementById('s-submit-area').style.display=state.studentAnswered?'none':'block';
   if(state.studentAnswered)document.getElementById('s-submitted-msg').classList.add('visible');
-  if(state.session.revealed)renderStudentPie();
+  if(state.session.revealed)renderStudentResults();
   else syncTimerToStudent(state.session.currentTimer,state.session.timerMax);
 }
 
@@ -811,7 +823,7 @@ async function submitStudentAnswer(){
   updateStudentScorePill();
   toast('Answer submitted!');
   if(API_URL){try{await apiPost('submitResponse',{email,qIdx:idx,optionIdx:studentSelectedOption});}catch(e){}}
-  if(state.session.revealed)renderStudentPie();
+  if(state.session.revealed)renderStudentResults();
 }
 
 function syncTimerToStudent(t,max){
@@ -823,10 +835,16 @@ function syncTimerToStudent(t,max){
   bar.style.width=pct+'%'; bar.classList.toggle('urgent',t<=10&&t>0);
 }
 
-function renderStudentPie(){
+function renderStudentResults(){
   document.getElementById('s-submit-area').style.display='none';
   document.getElementById('s-submitted-msg').classList.add('visible');
-  renderPie('s-pie-container',state.session.currentQIdx,140);
+  // Use server counts — the authoritative source
+  if(state._serverCounts && state._serverCounts.length){
+    renderResults('s-results-container', state.session.currentQIdx,
+      state._serverCounts, state._serverStudentCount || 0);
+  } else {
+    showLocalResults('s-results-container');
+  }
 }
 
 // ── STUDENT POLLING ──────────────────────────────────────────────────
@@ -847,36 +865,21 @@ async function pollForStudentUpdates(){
       state.session.currentQIdx=newQIdx;
       state.session.revealed=false; state.session.timerMax=max; state.session.currentTimer=t;
       studentSelectedOption=null;
+      state.studentAnswered=false;
       syncStudentQuestion();
     }
     state.session.currentTimer=t; syncTimerToStudent(t,max);
 
-    // ALWAYS merge response counts on every poll tick so pie stays current
-    const currentQIdx = newQIdx >= 0 ? newQIdx : state.session.currentQIdx;
-    if(data.responseCounts&&data.responseCounts.length&&currentQIdx>=0){
-      if(!state.responses[currentQIdx])state.responses[currentQIdx]={};
-      const fakeResps={};
-      data.responseCounts.forEach((c,i)=>{for(let n=0;n<c;n++)fakeResps[`sv_${i}_${n}`]=i;});
-      // Preserve the student's own local submission
-      const local={};
-      Object.entries(state.responses[currentQIdx]).forEach(([k,v])=>{if(!k.startsWith('sv_'))local[k]=v;});
-      state.responses[currentQIdx]={...local,...fakeResps};
+    // Store response counts separately — only used for pie at reveal time
+    if(data.responseCounts&&data.responseCounts.length){
+      state._serverCounts=data.responseCounts;
+      state._serverStudentCount=data.studentCount||0;
     }
 
-    // Update student count
-    if(data.studentCount!==undefined){
-      if(Object.keys(state.students).length<=1){
-        const fake={};for(let i=0;i<data.studentCount;i++)fake[`s${i}`]={};
-        state.students=fake;
-      }
-    }
-
+    // Reveal: show pie once
     if(revealed&&!state.session.revealed){
       state.session.revealed=true;
-      renderStudentPie();
-    } else if(revealed&&state.session.revealed){
-      // Already revealed — keep pie updated with latest counts
-      renderStudentPie();
+      renderStudentResults();
     }
     if(!active&&state.session.active){ state.session.active=false; showStudentSummary(); }
   }catch(e){}
@@ -911,7 +914,7 @@ async function renderAnalytics(){
     const counts=new Array(q.options.length).fill(0);
     Object.values(resps).forEach(r=>{if(r!==null&&r!==undefined&&counts[r]!==undefined)counts[r]++;});
     const answered=Object.keys(resps).length;
-    return `<div class="card" style="margin-bottom:1rem;"><div style="font-size:.75rem;color:var(--muted);margin-bottom:.25rem;">Q${idx+1}</div><div style="font-weight:500;font-size:.95rem;margin-bottom:1rem;">${esc(q.text)}</div><div style="display:flex;gap:.5rem;flex-wrap:wrap;">${counts.map((c,i)=>{const pct=total>0?Math.round((c/total)*100):0;return `<div style="background:${PIE_COLORS[i%PIE_COLORS.length]}22;border:1px solid ${PIE_COLORS[i%PIE_COLORS.length]}44;border-radius:8px;padding:.5rem .75rem;min-width:60px;text-align:center;"><div style="font-weight:700;color:${PIE_COLORS[i%PIE_COLORS.length]};font-size:1.1rem;">${pct}%</div><div style="font-size:.72rem;color:var(--muted);">${LETTERS[i]} (${c})</div></div>`;}).join('')}</div><div style="font-size:.78rem;color:var(--muted);margin-top:.75rem;">${answered} responses</div></div>`;
+    return `<div class="card" style="margin-bottom:1rem;"><div style="font-size:.75rem;color:var(--muted);margin-bottom:.25rem;">Q${idx+1}</div><div style="font-weight:500;font-size:.95rem;margin-bottom:1rem;">${esc(q.text)}</div><div style="display:flex;gap:.5rem;flex-wrap:wrap;">${counts.map((c,i)=>{const pct=total>0?Math.round((c/total)*100):0;return `<div style="background:rgba(0,201,167,.12);border:1px solid rgba(0,201,167,.3);border-radius:8px;padding:.5rem .75rem;min-width:60px;text-align:center;"><div style="font-weight:700;color:var(--teal);font-size:1.1rem;">${pct}%</div><div style="font-size:.72rem;color:var(--muted);">${LETTERS[i]} (${c})</div></div>`;}).join('')}</div><div style="font-size:.78rem;color:var(--muted);margin-top:.75rem;">${answered} responses</div></div>`;
   }).join('');
 }
 
@@ -943,17 +946,13 @@ setInterval(async ()=>{
     const tab=document.getElementById('live-tab-control');
     if(tab&&tab.style.display!=='none'){
       updateStudentStats(); updateResponseStats();
-      // After reveal, keep fetching latest counts so pie updates as late submissions arrive
-      if(state.session.revealed&&state.session.currentQIdx>=0&&API_URL){
+      // After reveal, keep results updated
+      if(state.session.revealed && state.session.currentQIdx >= 0 && API_URL){
         try{
-          const data=await apiGet('pollState');
-          if(data&&data.responseCounts&&data.responseCounts.length){
-            const idx=state.session.currentQIdx;
-            if(!state.responses[idx])state.responses[idx]={};
-            const fakeResps={};
-            data.responseCounts.forEach((c,i)=>{for(let n=0;n<c;n++)fakeResps[`sv_${i}_${n}`]=i;});
-            state.responses[idx]=fakeResps;
-            renderPie('ctrl-pie-container',idx,160);
+          const data = await apiGet('pollState');
+          if(data && data.responseCounts){
+            renderResults('ctrl-results-container', state.session.currentQIdx,
+              data.responseCounts, data.studentCount || 0);
           }
         }catch(e){}
       }
