@@ -627,8 +627,21 @@ async function endCurrentTimer(){
   state.session.revealed=true;
   document.getElementById('btn-end-timer').disabled=true;
   updateTimerUI(0,state.session.timerMax);
+  // Fetch latest response counts from Sheets before rendering pie
+  if(API_URL){
+    try{
+      await apiPost('revealQuestion');
+      const data=await apiGet('pollState');
+      if(data&&data.responseCounts&&data.responseCounts.length){
+        const idx=state.session.currentQIdx;
+        if(!state.responses[idx])state.responses[idx]={};
+        const fakeResps={};
+        data.responseCounts.forEach((c,i)=>{for(let n=0;n<c;n++)fakeResps[`sv_${i}_${n}`]=i;});
+        state.responses[idx]={...fakeResps};
+      }
+    }catch(e){}
+  }
   renderPie('ctrl-pie-container',state.session.currentQIdx,160);
-  if(API_URL){try{await apiPost('revealQuestion');}catch(e){}}
 }
 
 function updateTimerUI(t,max){
@@ -838,24 +851,33 @@ async function pollForStudentUpdates(){
     }
     state.session.currentTimer=t; syncTimerToStudent(t,max);
 
-    // Merge server response counts for pie display
-    if(data.responseCounts&&data.responseCounts.length&&newQIdx>=0){
-      if(!state.responses[newQIdx])state.responses[newQIdx]={};
+    // ALWAYS merge response counts on every poll tick so pie stays current
+    const currentQIdx = newQIdx >= 0 ? newQIdx : state.session.currentQIdx;
+    if(data.responseCounts&&data.responseCounts.length&&currentQIdx>=0){
+      if(!state.responses[currentQIdx])state.responses[currentQIdx]={};
       const fakeResps={};
       data.responseCounts.forEach((c,i)=>{for(let n=0;n<c;n++)fakeResps[`sv_${i}_${n}`]=i;});
+      // Preserve the student's own local submission
       const local={};
-      Object.entries(state.responses[newQIdx]).forEach(([k,v])=>{if(!k.startsWith('sv_'))local[k]=v;});
-      state.responses[newQIdx]={...local,...fakeResps};
+      Object.entries(state.responses[currentQIdx]).forEach(([k,v])=>{if(!k.startsWith('sv_'))local[k]=v;});
+      state.responses[currentQIdx]={...local,...fakeResps};
     }
 
-    // Update student count for pie label
+    // Update student count
     if(data.studentCount!==undefined){
-      const fake={};for(let i=0;i<data.studentCount;i++)fake[`s${i}`]={};
-      // Only update if we don't have real students registered
-      if(Object.keys(state.students).length<=1) state.students=fake;
+      if(Object.keys(state.students).length<=1){
+        const fake={};for(let i=0;i<data.studentCount;i++)fake[`s${i}`]={};
+        state.students=fake;
+      }
     }
 
-    if(revealed&&!state.session.revealed){ state.session.revealed=true; renderStudentPie(); }
+    if(revealed&&!state.session.revealed){
+      state.session.revealed=true;
+      renderStudentPie();
+    } else if(revealed&&state.session.revealed){
+      // Already revealed — keep pie updated with latest counts
+      renderStudentPie();
+    }
     if(!active&&state.session.active){ state.session.active=false; showStudentSummary(); }
   }catch(e){}
 }
@@ -915,8 +937,29 @@ if(API_URL){ document.getElementById('api-url-input').value=API_URL; document.ge
 // Demo questions
 state.questions=[{text:'What is the powerhouse of the cell?',options:[{text:'Nucleus'},{text:'Mitochondria'},{text:'Ribosome'},{text:'Golgi apparatus'}],correctIdx:1,timer:20},{text:'Which planet is closest to the Sun?',options:[{text:'Venus'},{text:'Earth'},{text:'Mercury'},{text:'Mars'}],correctIdx:2,timer:25}];
 document.getElementById('btn-go-step3').disabled=false;
-// Keep teacher stats live
-setInterval(()=>{ if(document.getElementById('screen-teacher-live').classList.contains('active')){ const tab=document.getElementById('live-tab-control'); if(tab&&tab.style.display!=='none'){ updateStudentStats(); updateResponseStats(); } } },2000);
+// Keep teacher stats and pie live
+setInterval(async ()=>{
+  if(document.getElementById('screen-teacher-live').classList.contains('active')){
+    const tab=document.getElementById('live-tab-control');
+    if(tab&&tab.style.display!=='none'){
+      updateStudentStats(); updateResponseStats();
+      // After reveal, keep fetching latest counts so pie updates as late submissions arrive
+      if(state.session.revealed&&state.session.currentQIdx>=0&&API_URL){
+        try{
+          const data=await apiGet('pollState');
+          if(data&&data.responseCounts&&data.responseCounts.length){
+            const idx=state.session.currentQIdx;
+            if(!state.responses[idx])state.responses[idx]={};
+            const fakeResps={};
+            data.responseCounts.forEach((c,i)=>{for(let n=0;n<c;n++)fakeResps[`sv_${i}_${n}`]=i;});
+            state.responses[idx]=fakeResps;
+            renderPie('ctrl-pie-container',idx,160);
+          }
+        }catch(e){}
+      }
+    }
+  }
+},3000);
 </script>
 </body>
 </html>
