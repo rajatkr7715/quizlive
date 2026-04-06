@@ -932,7 +932,29 @@ async function launchSession() {
 
     if (API_URL) {
       await apiPost('resetAll');
-      // Save session metadata first
+
+      // Save each question as a separate key in the Session KV store
+      // using the working saveSession action — no new actions needed
+      // Format: key=q_0, value={"text":...,"options":...,"correctIdx":...,"timer":...}
+      // We send one question per request to stay well under URL limits
+      let syncErrors = 0;
+      for (let i = 0; i < state.questions.length; i++) {
+        try {
+          const q = state.questions[i];
+          const updates = {};
+          updates['q_' + i] = JSON.stringify({
+            t: q.text,
+            o: q.options.map(op => op.text),
+            c: q.correctIdx,
+            s: q.timer || state.session.defaultTimer
+          });
+          await apiPost('saveSession', { updates });
+        } catch(e) {
+          syncErrors++;
+        }
+      }
+
+      // Save session metadata
       await apiPost('saveSession', { updates: {
         code:         state.session.code,
         title:        state.session.title,
@@ -943,27 +965,11 @@ async function launchSession() {
         revealed:     false,
         totalQ:       state.questions.length
       }});
-      // Save each question individually to Sheets (avoids URL length limits)
-      let syncErrors = 0;
-      for (let i = 0; i < state.questions.length; i++) {
-        try {
-          const q = state.questions[i];
-          // Send minimal question data — just what students need
-          const minQ = {
-            text:       q.text,
-            options:    q.options,
-            correctIdx: q.correctIdx,
-            timer:      q.timer || state.session.defaultTimer
-          };
-          await apiPost('saveOneQuestion', { idx: i, question: minQ });
-        } catch(e) {
-          syncErrors++;
-        }
-      }
+
       if (syncErrors === 0) {
         toast('✓ Session synced to Google Sheets');
       } else {
-        toast(`Session launched. ${syncErrors} questions failed to sync.`, true);
+        toast('Session launched (partial sync — ' + syncErrors + ' questions failed)', true);
       }
     } else {
       toast('Session launched (demo mode — no backend connected)');
@@ -1129,15 +1135,28 @@ async function joinSession() {
 }
 
 async function fetchQuestionsOneByOne(total) {
-  // Fetches all questions from Sheets one at a time to avoid URL length limits
-  // Questions are stored in Sheets by the teacher on launch
+  // Questions are stored as q_0, q_1... keys in the Session sheet
+  // Fetch all at once via getSession and reconstruct
   try {
-    const res = await apiGet('getQuestions');
-    if (res && res.questions && res.questions.length > 0) {
-      return res.questions;
+    const res = await apiGet('getSession');
+    if (!res || !res.session) return [];
+    const s = res.session;
+    const questions = [];
+    for (let i = 0; i < total; i++) {
+      const raw = s['q_' + i];
+      if (!raw) continue;
+      const qd = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      questions.push({
+        text:       qd.t,
+        options:    (qd.o || []).map(text => ({ text })),
+        correctIdx: Number(qd.c),
+        timer:      Number(qd.s) || 30
+      });
     }
-  } catch(e) {}
-  return [];
+    return questions;
+  } catch(e) {
+    return [];
+  }
 }
 
 async function _doJoin(name, email, code) {
