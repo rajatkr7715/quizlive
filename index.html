@@ -576,7 +576,7 @@
     <div class="proj-stat"><div class="pv" id="proj-stat-avg">—</div><div class="pl">Avg Score</div></div>
   </div>
   <div style="position:absolute; bottom:1rem; right:1.5rem;">
-    <button class="btn" onclick="showScreen('screen-landing')" style="font-size:0.75rem; opacity:0.5;">← Back</button>
+    <button class="btn" onclick="projGoBack()" style="font-size:0.75rem; opacity:0.5;">← Back</button>
   </div>
 </div>
 
@@ -1532,6 +1532,18 @@ async function startProjectionPoll() {
       updateProjection();
     } catch(e) {}
   }, 1500);
+}
+
+function projGoBack() {
+  // Return to teacher live screen if session is active, otherwise go home
+  if (state.session.active && state.session.currentQIdx >= 0) {
+    showScreen('screen-teacher-live');
+    switchLiveTab('control');
+  } else if (state.session.active) {
+    showScreen('screen-teacher-live');
+  } else {
+    showScreen('screen-landing');
+  }
 }
 
 function syncTimerToProjection(t, max) {
