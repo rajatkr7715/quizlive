@@ -765,7 +765,8 @@ function syncStudentQuestion(){
   document.getElementById('s-q-text').textContent=q.text;
   const email=state.currentStudent.email;
   const prevAnswer=state.students[email]?.answers[idx];
-  state.studentAnswered=prevAnswer!==undefined; studentSelectedOption=null;
+  state.studentAnswered=prevAnswer!==undefined;
+  // Note: studentSelectedOption is reset by the caller (poll/join) when truly needed
   document.getElementById('s-options').innerHTML=q.options.map((opt,i)=>`<div class="s-opt ${state.studentAnswered?'disabled':''} ${state.studentAnswered&&i===prevAnswer?'selected':''}" onclick="selectStudentOption(${i})" id="s-opt-${i}"><div class="s-opt-letter">${LETTERS[i]}</div><span>${esc(opt.text)}</span></div>`).join('');
   document.getElementById('s-submit-area').style.display=state.studentAnswered?'none':'block';
   if(state.studentAnswered)document.getElementById('s-submitted-msg').classList.add('visible');
@@ -774,7 +775,13 @@ function syncStudentQuestion(){
 }
 
 let studentSelectedOption=null;
-function selectStudentOption(i){ if(state.studentAnswered)return; studentSelectedOption=i; document.querySelectorAll('.s-opt').forEach((el,idx)=>el.classList.toggle('selected',idx===i)); }
+function selectStudentOption(i){
+  if(state.studentAnswered)return;
+  studentSelectedOption=i;
+  document.querySelectorAll('.s-opt').forEach((el,idx)=>el.classList.toggle('selected',idx===i));
+  // Make sure submit button is visible whenever an option is selected
+  document.getElementById('s-submit-area').style.display='block';
+}
 
 async function submitStudentAnswer(){
   if(studentSelectedOption===null){toast('Select an option first',true);return;}
@@ -823,9 +830,11 @@ async function pollForStudentUpdates(){
     const t=data.timerRemaining; const max=data.timerMax;
 
     if(newQIdx!==lastSeenQIdx&&newQIdx>=0){
-      lastSeenQIdx=newQIdx; state.session.currentQIdx=newQIdx;
+      lastSeenQIdx=newQIdx; // set FIRST so subsequent polls don't re-trigger
+      state.session.currentQIdx=newQIdx;
       state.session.revealed=false; state.session.timerMax=max; state.session.currentTimer=t;
-      studentSelectedOption=null; syncStudentQuestion();
+      studentSelectedOption=null;
+      syncStudentQuestion();
     }
     state.session.currentTimer=t; syncTimerToStudent(t,max);
 
