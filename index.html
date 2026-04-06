@@ -362,7 +362,7 @@
       <div id="load-from-sheets-banner" class="card" style="display:none; border-color:rgba(0,201,167,0.3); background:rgba(0,201,167,0.06);">
         <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:1rem;">
           <div>
-            <div style="font-weight:600; margin-bottom:0.25rem;">☁ Questions saved in Google Sheets</div>
+            <div style="font-weight:600; margin-bottom:0.25rem;">💾 Questions saved from last session</div>
             <div style="font-size:0.82rem; color:var(--muted);" id="sheets-q-count">Loading...</div>
           </div>
           <button class="btn btn-primary" onclick="loadQuestionsFromSheets()" id="btn-load-sheets">⬇ Load from Sheets</button>
@@ -761,20 +761,22 @@ function onTeacherEnterSetup() {
   checkSheetsForQuestions();
 }
 async function checkSheetsForQuestions() {
-  // Called when teacher enters setup — checks if Sheets already has questions saved
-  if (!API_URL) return;
+  // Check localStorage for previously saved questions
   try {
-    const res = await apiGet('getQuestions');
-    if (res && res.questions && res.questions.length > 0) {
-      const banner = document.getElementById('load-from-sheets-banner');
-      const countEl = document.getElementById('sheets-q-count');
-      if (banner) {
-        banner.style.display = 'block';
-        countEl.textContent = `${res.questions.length} question${res.questions.length !== 1 ? 's' : ''} found from your last upload`;
+    const saved = localStorage.getItem('quizlive_questions');
+    if (saved) {
+      const questions = JSON.parse(saved);
+      if (questions && questions.length > 0) {
+        const banner = document.getElementById('load-from-sheets-banner');
+        const countEl = document.getElementById('sheets-q-count');
+        if (banner) {
+          banner.style.display = 'block';
+          countEl.textContent = `${questions.length} question${questions.length !== 1 ? 's' : ''} found from your last upload`;
+        }
       }
     }
   } catch(e) {
-    // silently ignore — Sheets just may not have questions yet
+    // silently ignore
   }
 }
 
@@ -783,19 +785,23 @@ async function loadQuestionsFromSheets() {
   btn.textContent = '⏳ Loading...';
   btn.disabled = true;
   try {
-    const res = await apiGet('getQuestions');
-    if (res && res.questions && res.questions.length > 0) {
-      state.questions = res.questions;
-      toast(`✓ Loaded ${res.questions.length} questions from Google Sheets`);
-      document.getElementById('btn-go-step3').disabled = false;
-      goSetupStep(2);
-    } else {
-      toast('No questions found in Sheets yet. Please upload your Word doc.', true);
-      btn.textContent = '⬇ Load from Sheets';
-      btn.disabled = false;
+    // Load from localStorage first (fastest, no URL limits)
+    const saved = localStorage.getItem('quizlive_questions');
+    if (saved) {
+      const questions = JSON.parse(saved);
+      if (questions && questions.length > 0) {
+        state.questions = questions;
+        toast(`✓ Loaded ${questions.length} questions from saved session`);
+        document.getElementById('btn-go-step3').disabled = false;
+        goSetupStep(2);
+        return;
+      }
     }
+    toast('No saved questions found. Please upload your Word doc.', true);
+    btn.textContent = '⬇ Load from Sheets';
+    btn.disabled = false;
   } catch(e) {
-    toast('Could not load from Sheets: ' + e.message, true);
+    toast('Could not load questions: ' + e.message, true);
     btn.textContent = '⬇ Load from Sheets';
     btn.disabled = false;
   }
@@ -916,15 +922,12 @@ async function launchSession() {
 
   showLoading(true);
   try {
+    // Always save questions to localStorage (avoids URL length limits)
+    localStorage.setItem('quizlive_questions', JSON.stringify(state.questions));
+
     if (API_URL) {
-      // Clear previous session data
+      // Only send small session metadata to Sheets — no questions
       await apiPost('resetAll');
-      // Save questions in small batches to avoid URL length limits
-      const BATCH = 3;
-      for (let i = 0; i < state.questions.length; i += BATCH) {
-        const batch = state.questions.slice(i, i + BATCH);
-        await apiPost('saveQuestionsBatch', { questions: batch, startIdx: i });
-      }
       await apiPost('saveSession', { updates: {
         code:         state.session.code,
         title:        state.session.title,
