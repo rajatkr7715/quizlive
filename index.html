@@ -599,7 +599,12 @@ function switchLiveTab(tab){
 }
 
 async function pushNextQuestion(){
-  if(state.session.timerInterval)clearInterval(state.session.timerInterval);
+  // Always stop and clean up current timer before moving on
+  if(state.session.timerInterval){ clearInterval(state.session.timerInterval); state.session.timerInterval=null; }
+  // If timer was still running, mark current question as revealed in Sheets
+  if(!state.session.revealed && state.session.currentQIdx >= 0 && API_URL){
+    try{ await apiPost('revealQuestion'); }catch(e){}
+  }
   const nextIdx=state.session.currentQIdx+1;
   if(nextIdx>=state.questions.length){endQuiz();return;}
   state.session.currentQIdx=nextIdx; state.session.revealed=false;
